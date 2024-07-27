@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       keel_tag: ${{ steps.keel_tag.outputs.value }}
+      keel_digest: ${{ steps.keel_digest.outputs.value }}
       image_exists: ${{ steps.image_exists.outputs.value }}
     steps:
       - name: Get the latest release of keelhq/keel
@@ -18,6 +19,12 @@ jobs:
           set -ex
           TAG="$(curl https://api.github.com/repos/keel-hq/keel/releases/latest -s | jq .name -r)"
           echo "value=${TAG}" >> $GITHUB_OUTPUT
+      - name: Get the latest digest of keelhq/keel
+        id: keel_digest
+        run: |
+          set -ex
+          DIGEST="$(docker manifest inspect keelhq/keel:latest -v | jq .Descriptor.digest -r)"
+          echo "value=${DIGEST#sha256:}" >> $GITHUB_OUTPUT
       - name: Login to Docker Hub
         uses: docker/login-action@master
         with:
@@ -27,7 +34,7 @@ jobs:
         id: image_exists
         run: |
           set -ex
-          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/keel:${{ steps.keel_tag.outputs.value }}"
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/keel:${{ steps.keel_digest.outputs.value }}"
           if docker manifest inspect "$IMAGE" &> /dev/null; then
             echo "value=true" >> $GITHUB_OUTPUT
           else
@@ -63,7 +70,8 @@ jobs:
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          tags: "${{ env.IMAGE }}:${{ env.TAG }},${{ env.IMAGE }}:latest"
+          tags: "${{ env.IMAGE }}:${{ env.TAG }},${{ env.IMAGE }}:${{ env.DIGEST }},${{ env.IMAGE }}:latest"
     env:
       IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/keel
       TAG: ${{ needs.check-version.outputs.keel_tag }}
+      DIGEST: ${{ needs.check-version.outputs.keel_digest }}
